@@ -22,7 +22,7 @@ The above doesn't look like "normal" programming languages because APL doesn't u
 An explanation of the above:
 1. `⍝` denotes a `//` style comment, it's called _lamp_ and it _illuminates_.
 2. `nl` and `sp` are variables with `nl` being newline characters and `sp` whitespace characters. In APL, `←` is assignment. Here we assign everything to the right of `nl` or `sp` to the variables `nl` and `sp`.
-3. `¨` will create a _derived function_ which will map the function _immediately_ to the left of `¨` across the value to the right. By _immediately_ to the left I mean you read as little as possible to the left to figure out what the left hand argument is, but the right hand argument is the result of evaluating the _entire_ expression to the right, and this is how APL works in general--take as little as possible from the left but everything from the right.
+3. `¨` will create a _derived function_ which will map the function _immediately_ to the left of `¨` across the value to the right. By _immediately_ to the left I mean you read as little as possible to the left to figure out what the lefthand argument is, but the righthand argument is the result of evaluating the _entire_ expression to the right, and this is how APL works in general--take as little as possible from the left but everything from the right.
 4. `⎕UCS` happens to be a function in Dyalog for getting unicode characters from numeric values.
 5. The ravel function `,` will catenate its lefthand and righthand arguments, so `sp` contains the newlines in `nl` along with tab and space.
 
@@ -102,3 +102,81 @@ We define the function `wc` with input `fn` (filename) and output `res` (result)
 
 ## Performance Measurements
 Using [a user defined timing operator](https://dfns.dyalog.com/c_time.htm) we can time the `wc` function. On a 1.661GB file (which is just the `big.txt` file from the original Haskell post's repository repeated multiple times), I get (on my 11 inch early 2k15 MacBook Air) initially a run of 3.36 seconds, but then 2.75s, 2.34s, 2.36s on immediate subsequent runs now that the computer is pumped and primed. Using the `time` terminal utility to run `wc` against the same file I get _user times_ ranging from 5.345s to 5.549s, so this first attempt is faster and we are done. I get similarly scaled differences for smaller files.
+
+## Splitting It All Up
+We can split our procedural function up into a few direct functions and an operator which might make it easier to understand and maintain (or maybe not). We start with a function computing the `wc` stats on a string together with whether the string's first and last character is not a space:
+
+```
+blockCount←{
+    l←+/⍵∊⎕UCS¨10 11 12 13  ⍝ #lines
+    s←⍵∊⎕UCS¨9 10 11 12 13 32  ⍝ is space
+    w←(~(¯1)↑s)++/1=(1↓s)-(¯1)↓s  ⍝ words
+    ⍝ first-non-space, chars, words, lines, last-non-space
+    (~1↑s)(≢⍵)w l(~(¯1)↑s)
+}
+```
+
+1. We directly use the vector of newlines, passing `⎕UCS¨10 11 12 13` as the righthand argument to the membership function `∊`. The lefthand argument is the righthand argument passed to `blockCount`.
+2. `s` is the boolean vector telling us where spaces (`⎕UCS¨9 10 11 12 13 32`) occur in the righthand argument to `blockCount`.
+3. From `s` we calculate the words in `blockCount`'s righthand argument directly, just as we did before.
+4. Finally we return whether the first character is not a space, the number of characters, the number of words, the number of lines, and whether the last character is not a space.
+
+We can apply `blockCount` to multiple strings. Just like the original Haskell version we need some way to combine the results of applying `blockCount` to sequential strings from a file, which we do with the following:
+
+```
+blockCollapse←{
+    adjustment←0 0(-+/(1↓⍵[;1])∧(¯1)↓⍵[;5])0 0
+    collapsed←(⍵[1;1]),(+⌿⍵)[2 3 4],(⍵[≢⍵;5])
+    adjustment+collapsed
+}
+```
+
+The assumption here is that the results from `blockCount` are stored in a matrix where each row is a result, with the values as described as above (whether the first character is a nonspace, etc...). When we collapse a sequence of `blockCount` results we want a result of the same form as `blockCount`. This will be the following:
+
+1. Whether the first result in the matrix represented a string _starting_ with a nonspace--that value is `⍵[1;1]`.
+2. The sum of all the characters from all the results.
+3. The sum of all the words from the results minus the number of times a word was split.
+4. The sum of all the lines from all the results.
+5. Whether the last result in the matrix represented a string _ending_ with a nonspace--that value is `⍵[≢⍵;5]`.
+
+The sums in the middle can be calculated if we reduce addition _down_ the input matrix. `(+⌿⍵)` will calculate that sum, and `(+⌿⍵)[2 3 4]` will be the middle three values of that sum (we don't need the sums of whether the strings started or ended with nonspace characters).
+
+The value we have to subtract--the number of times a word was split--is calculated by taking the sum of whether a string started with a nonspace _anded_ with whether the string before ended with one. That is the value `+/(1↓⍵[;1])∧(¯1)↓⍵[;5])`. `(1↓⍵[;1])` is the first column of our results matrix (which represents whether strings started with a nonspace) without the value from the first result; `(¯1)↓⍵[;5]` is the last column (representing whether strings ended with a nonspace) without the value from the last result. We and these together with `∧` and sum that with `+/` to get the number of times we split a word; prepending `-` negates the value and placing it in the middle of a vector of four zeroes lets us just add it to our calculated result, adjusting the word count appropriately.
+
+Now we add a user defined operator to handle looping over reading a file. The below does this:
+
+```
+v←(f rc)fd;data
+v←⍬
+:Repeat
+    data←⎕NREAD fd 80(1024×1024)
+    :If 0<≢data
+        v←f data
+    :EndIf
+:Until 0=≢data
+```
+
+`v` is the output of the operator, we need this for technical reasons but the value won't be used. Our operator accepts a computation to use on each string on its left and a file descriptor on its right and loops until it has consumed all the data in the file.
+
+Finally, we can bring this all together in a (possibly) simpler implementation of `wc` which relies on the computations we've defined. Since we no longer need to use looping or conditionals in `wc` (all that work is done in `rc`), we can make `wc` a direct function:
+
+```
+wc←{
+    res←1 5⍴0
+    update←{
+        val←res,[1]blockCount ⍵
+        res∘←val
+        val
+    }
+    fd←⍵ ⎕NTIE 0
+    _←update rc fd
+    _←⎕NUNTIE fd
+    (blockCollapse res)[4 3 2]
+}
+```
+
+We start by making `res` a zero-filled matrix of one row by five column. Then we define a helper function `update` which will update `res` using `blockCount`. `,[1]` lets us use ravel along its lefthand argument's first axis so that `val` will be `res` with the result from `blockCount ⍵` appended as the last row. `∘←` lets us update `res` from within `update` and we return `val`.
+
+Just like the built in operators we put our operated function on the left of `rc` which creates a derived function that accepts the file descriptor `fd`. `rc` will iterate over the contents of `fd` and successively apply update. We have to assign the result (or just use it somehow) as the first unused computation of a direct function is its return value, and we don't want an early return.
+
+Finally, we used `blockCollapse` to compress the result matrix down into the desired answer and pick out the values we want with `[4 3 2]`.
