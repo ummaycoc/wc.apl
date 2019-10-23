@@ -30,32 +30,19 @@ Now that we know what constitutes a newline or a space we can figure out how to 
 ```
 0 1 0 0 1 0 0 0 1 0 0 0 0 0 1 0 0 1 0 1 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0
 ```
-telling us the exact position of any whitespace characters. Let's call this vector `f` for _found_: `f←s∊sp`. We don't want to just count the ones in this vector as then consecutive whitespace characters would each count as a word; what we want to count is when we switch from non-whitespace to whitespace (or vice-versa), and we can accomplish this with the difference between adjacent values. This is easy in APL, it's just `(1↓f)-(¯1)↓f`:
-1. `¯` is "high minus" and is used to negate literals.
-2. `↓` is the drop function which drops a number of items from the value to the right. If the number on the left is positive, it drops that many from the _front_ of the value, if it is negative then it drops the absolute value of that many from the _back_ of the value. So `1↓f` is `f` without the first item and `(¯1)↓f` is `f` without the last item.
-3. `-` is subtraction, so we are subtracting values in `f` from the values to their left. For this particular `f` we get the following:
-```
-1 ¯1 0 1 ¯1 0 0 1 ¯1 0 0 0 0 1 ¯1 0 1 ¯1 1 ¯1 0 0 0 0 0 1 ¯1 0 0 0 0 1 ¯1 0 0 0 0 0 0
-```
+telling us the exact position of any whitespace characters. We can negate the vector (turn `1`s into `0`s and vice versa) and use the partition function `⊆` to collect the words into an array of strings with `(~s∊sp)⊆s` (`~` is the negation function) and we can count the result using `≢(~s∊sp)⊆s`. The way the partition function works is it uses the boolean vector to strip out parts of its righthand argument based on runs of `1` in its lefthand argument (thanks to [u/olzd](https://www.reddit.com/user/olzd/) for pointing out `⊆` when I posted this article originally on [r/programming](https://www.reddit.com/r/programming/comments/dku13a/beating_c_with_dyalog_apl_wc/)).
 
-This vector is one element _shorter_ than `f`--if `f` were a vector of five items with values `0 1 0 0 1` then we would have calculated `(1 0 0 1) - (0 1 0 0)` after the drops, which would be `1 ¯1 0 1`, a vector of four items. Back to the above result, we can find all the places where `1` appears simply with `1=(1↓f)-(¯1)↓f` which compares every element in the vector to the value `1`, yielding a vector of the same size as the shorter "difference" vector that has `1` where a difference of `1` was found and `0` elsewhere:
+We only have one piece of input in the above calculation and so it is easy to turn it into a function. In APL we can make a **direct function** by using braces (I won't go into the differences in the two function types here but know that the book references above goes into some details). So we can store this calculation in a variable with:
 ```
-1 0 0 1 0 0 0 1 0 0 0 0 0 1 0 0 1 0 1 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0
+words←{≢(~⍵∊sp)⊆⍵}
 ```
-And these represent the exact places where a space followed a non-space (the first `1` corresponds to the space between `I` and `am`). Summing this up gives us the number of places a word _terminated_ by being followed by a space, and we can get that sum with the function `+/`. Just as `¨` created a _derived function_ so does `/` -- both are called _operators_. As `¨` was associated with the commonly named function `map` so is `/` associated with the commonly named function `reduce`/`fold`, and so `+/` is a sum function.
+In APL `⍺` (alpha) and `⍵` (omega) are the names of the left and right arguments to a direct function. We apply a function just like we do the built in primitive functions, we give it parameters: `words s`. One thing we can do is make `words` a bit more general and have it take _any_ boolean vector and count the partition of that vector (we don't need the characters, after all), and this then gives us:
+```
+words←{≢(~⍵)⊆⍵}
+```
+And so when we apply it to our string we will do it with `words s∊sp`. Just like with the built in parameters, `words` will be evaluated on the entire expression to the right which is `s∊sp`. This yields `9`. One thing to keep in mind is testing edge cases and, for the empty string we get `0`.
 
-For `+/1=(1↓f)-(¯1)↓f` we get `8`, but `'I am the model of a modern major general'` has `9` words, not `8`. The problem is that we were only counting words terminated by a space, not by the end of the string. To count that, we must check if the last character is a space or not and if it's not then we can count the end of the string as terminating a word. We can get the whether the last character was a space or not with `(¯1)↑f`, which will be `1` if `s` ended with a space or `0` if not. Since we want to add exactly one word to the count when a string _does not_ end with a space we negate this with `~` and add that--negation switching `0`s and `1`s. Thus the word count expression is:
-```
-(~(¯1)↑f)++/1=(1↓f)-(¯1)↓f
-```
-
-We only have one piece of input in the above and so it is easy to turn it into a function. In APL we can make a **direct function** by using braces (I won't go into the differences in the two function types here but know that the book references above goes into some details). So we can store this calculation in a variable with:
-```
-words←{(~(¯1)↑⍵)++/1=(1↓⍵)-(¯1)↓⍵}
-```
-In APL `⍺` (alpha) and `⍵` (omega) are the names of the left and right arguments to a direct function. We apply a function just like we do the built in primitive functions, we give it parameters: `words s∊sp`. Just like with the built in parameters, `words` will be evaluated on the entire expression to the right which is `s∊sp` (`f` from above). This yields `9`. One problem is that the calculation is wrong for the empty string: `words ''∊sp` gives `1` not `0`. This won't be an issue for us because we won't even be invoking it on empty strings.
-
-### A First Attempt
+#### WC via Partition (⊆)
 Now that we can count words in a string we can count words in a file. We could just do this by reading in the entire file all at once and applying the `words` function and then counting the number of characters and the number of newlines. But that would be a bad idea--what if the file is 123GB in size?! Clearly we don't want to read that in all at once, instead we want to read it in a few blocks at a time. We're going to need a loop, and for that we need another type of function, a **procedural function** (again see the referenced book for details).
 
 One computation issue, as mentioned in the original Haskell based blog post, is what happens if we split up the input in the middle of a word? Well, we just use the same technique used in that blog post. No, not monoids (though that is cool), just keeping track if the last character we saw was a non-space or not. If it was and the first new character is _also_ a non-space then we subtract one word from the count as we accumulate.
@@ -63,7 +50,7 @@ One computation issue, as mentioned in the original Haskell based blog post, is 
 With that in mind, here's the first attempt
 ```
 res←wc fn;c;w;l;fd;data;blk;nl;sp;lnsp;words
-words←{(~(¯1)↑⍵)++/1=(1↓⍵)-(¯1)↓⍵}
+words←{≢(~⍵)⊆⍵}
 blk←256×1024
 nl←⎕UCS¨10 11 12 13
 sp←nl,⎕UCS¨9 32
@@ -100,8 +87,63 @@ We define the function `wc` with input `fn` (filename) and output `res` (result)
 12. We then store whether this iteration's data terminated with a nonspace character.
 13. Finally we close the file descriptor after the loop and return the line, word, and character counts in `res`.
 
-## Performance Measurements
-Using [a user defined timing operator](https://dfns.dyalog.com/c_time.htm) we can time the `wc` function. On a 1.661GB file (which is just the `big.txt` file from the original Haskell post's repository repeated multiple times), I get (on my 11 inch early 2k15 MacBook Air) initially a run of 3.36 seconds, but then 2.75s, 2.34s, 2.36s on immediate subsequent runs now that the computer is pumped and primed. Using the `time` terminal utility to run `wc` against the same file I get _user times_ ranging from 5.345s to 5.549s, so this first attempt is faster and we are done. I get similarly scaled differences for smaller files.
+#### Performance Measurements
+Using [a user defined timing operator](https://dfns.dyalog.com/c_time.htm) we can time the `wc` function. On a 1.661GB file (which is just the `big.txt` file from the original Haskell post's repository repeated multiple times), I get (on my 11 inch early 2k15 MacBook Air) initially a run of 32.97 seconds and about the same on immediate subsequent runs. Using the `time` terminal utility to run `wc` against the same file I get _user times_ ranging from 5.345s to 5.549s, so this first attempt is definitely slow compared to OSX's `wc` utility. If I comment out the line where `w` is calculated my initial running time on that same file is 4.32 seconds with subsequent runs hovering around 1.85 seconds, so clearly our word calculation is the culprit here (as was to be expected).
+
+### Counting Words with Array Arithmetic
+Let's call the vector `s∊sp` vector `f` for _found_: `f←s∊sp`. We don't want to just count the ones in this vector as then consecutive whitespace characters would each count as a word; what we want to count is when we switch from non-whitespace to whitespace (or vice-versa), and we can accomplish this with the difference between adjacent values. This is easy in APL, it's just `(1↓f)-(¯1)↓f`:
+1. `¯` is "high minus" and is used to negate literals.
+2. `↓` is the drop function which drops a number of items from the value to the right. If the number on the left is positive, it drops that many from the _front_ of the value, if it is negative then it drops the absolute value of that many from the _back_ of the value. So `1↓f` is `f` without the first item and `(¯1)↓f` is `f` without the last item.
+3. `-` is subtraction, so we are subtracting values in `f` from the values to their left. For this particular `f` we get the following:
+```
+1 ¯1 0 1 ¯1 0 0 1 ¯1 0 0 0 0 1 ¯1 0 1 ¯1 1 ¯1 0 0 0 0 0 1 ¯1 0 0 0 0 1 ¯1 0 0 0 0 0 0
+```
+
+This vector is one element _shorter_ than `f`--if `f` were a vector of five items with values `0 1 0 0 1` then we would have calculated `(1 0 0 1) - (0 1 0 0)` after the drops, which would be `1 ¯1 0 1`, a vector of four items. Back to the above result, we can find all the places where `1` appears simply with `1=(1↓f)-(¯1)↓f` which compares every element in the vector to the value `1`, yielding a vector of the same size as the shorter "difference" vector, and this vector has a `1` where a difference of `1` was found and `0` elsewhere:
+```
+1 0 0 1 0 0 0 1 0 0 0 0 0 1 0 0 1 0 1 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0
+```
+This represents the positions where a space followed a non-space (the first `1` corresponds to the space between `I` and `am`). Summing this up gives us the number of places a word _terminated_ by being followed by a space, and we can get that sum with the function `+/`. Just as `¨` created a _derived function_ so does `/` -- both are called _operators_. As `¨` was associated with the commonly named function `map` so is `/` associated with the commonly named function `reduce`/`fold`, and so `+/` is a sum function.
+
+For `+/1=(1↓f)-(¯1)↓f` we get `8`, but `'I am the model of a modern major general'` has `9` words, not `8`. The problem is that we were only counting words terminated by a space, not by the end of the string. To count that, we must check if the last character is a space or not and if it's not then we can count the end of the string as terminating a word. We can get the whether the last character was a space or not with `(¯1)↑f`, which will be `1` if `s` ended with a space or `0` if not. Since we want to add exactly one word to the count when a string _does not_ end with a space we negate this with `~` and add that. Thus the word count expression is:
+```
+(~(¯1)↑f)++/1=(1↓f)-(¯1)↓f
+```
+
+Turning this into a function yields:
+```
+words←{(~(¯1)↑⍵)++/1=(1↓⍵)-(¯1)↓⍵}
+```
+One problem is that the calculation is wrong for the empty string: `words ''∊sp` gives `1` not `0`. This won't be an issue for us because we won't even be invoking it on empty strings.
+
+#### WC via Array Arithmetic
+Here's what our `wc` function looks like with this change (only the second line changed):
+```
+res←wc fn;c;w;l;fd;data;blk;nl;sp;lnsp;words
+words←{(~(¯1)↑⍵)++/1=(1↓⍵)-(¯1)↓⍵}
+blk←256×1024
+nl←⎕UCS¨10 11 12 13
+sp←nl,⎕UCS¨9 32
+c←w←l←0
+fd←fn ⎕NTIE 0
+lnsp←0
+:Repeat
+    data←⎕NREAD fd 80 blk
+    :If 0=≢data
+        :Leave
+    :EndIf
+    c←c+(≢data)
+    l←l++/data∊nl
+    data←data∊sp
+    w←(w+words data)-(lnsp∧~1↑data)
+    lnsp←~(¯1)↑data
+:EndRepeat
+⎕NUNTIE fd
+res←l w c
+```
+
+#### Performance Measurements
+On the same 1.661GB file as before I initially get a run of 3.36 seconds, but then 2.75s, 2.34s, 2.36s on immediate subsequent runs now that the computer is pumped and primed. Using the `time` terminal utility to run `wc` against the same file I (again) get _user times_ ranging from 5.345s to 5.549s, so this attempt is faster and we are done. I get similarly scaled differences for smaller files.
 
 ## Splitting It All Up
 We can split our procedural function up into a few direct functions and an operator which might make it easier to understand and maintain (or maybe not). We start with a function computing the `wc` stats on a string together with whether the string's first and last character is not a space:
