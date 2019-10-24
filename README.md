@@ -222,3 +222,33 @@ We start by making `res` a zero-filled matrix of one row by five column. Then we
 Just like the built in operators we put our operated function on the left of `rc` which creates a derived function that accepts the file descriptor `fd`. `rc` will iterate over the contents of `fd` and successively apply update. We have to assign the result (or just use it somehow) as the first unused computation of a direct function is its return value, and we don't want an early return.
 
 Finally, we used `blockCollapse` to compress the result matrix down into the desired answer and pick out the values we want with `[4 3 2]`.
+
+## Space Utilization
+The above split up implementation has one drawback--we accumulate the results into a matrix whose size grows linearly as a function of the input file. Granted, it has a _great_ constant factor since we collapse each megabyte down to only five numbers, but still if we run this on a terabyte file we will likely use at least 20MB just for storing the results. That doesn't sound bad, but our earlier version ran in constant space and we can reclaim that here, too.
+
+The main change comes in the `rc` operator which now looks like this:
+```
+res←fd(m rc r)init;data
+res←init
+:Repeat
+    data←⎕NREAD fd 80(1024×1024)
+    :If 0<≢data
+        res←res r m data
+    :EndIf
+:Until 0=≢data
+```
+We are now operating on two functions--`m` to map the file data and `r` to fold new data into an accumulated result--i.e. we are doing a reduce/fold across a transformation of the file's contents. We also now accept the file descriptor `fd` on the left so that we can easily accept an initial accumulation value on the right.
+
+One thing we won't have to change is `blockCount`, it is the same as the above. We do have to change `blockCollapse` though and since we no longer need to collapse a whole matrix of results but instead need to add two results together, we can have a much simpler function `blockAdd←{(⍺[1],(⍺+⍵)[2 3 4],⍵[5])-(0 0(⍺[5]∧⍵[1])0 0)}` which does just that.
+
+Since `rc` is now accumulating results we don't really need to be updating a result in `wc` which now has the following sleek form:
+```
+wc←{
+    blockAdd←{(⍺[1],(⍺+⍵)[2 3 4],⍵[5])-(0 0(⍺[5]∧⍵[1])0 0)}
+    fd←⍵ ⎕NTIE 0
+    res←fd blockCount rc blockAdd 5⍴0
+    _←⎕NUNTIE fd
+    res[4 3 2]
+}
+```
+We use `blockCount` to map data blocks in the file to statistics for that block then use `blockAdd` to combine them, all handled by our operator `rc`. We now have regained constant memory space (the size of which depends on how much data we read at once, here I chose one megabyte), and it's starting to have the the feel of the monoid solution in the original Haskell article.
