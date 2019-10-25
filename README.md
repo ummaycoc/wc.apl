@@ -252,3 +252,8 @@ wc←{
 }
 ```
 We use `blockCount` to map data blocks in the file to statistics for that block then use `blockAdd` to combine them, all handled by our operator `rc`. We now have regained constant memory space (the size of which depends on how much data we read at once; here I chose one megabyte), and it's starting to have the the feel of the monoid solution in the original Haskell article.
+
+## Acknowledgements
+1. My long time friend Patrick Beh-Forrest was kind enough to read my post and suggest edits to my writing. I thank him deeply.
+2. My thanks to [u/olzd](https://www.reddit.com/u/olzd) for pointing out the beautiful partition (⊆) solution to counting words in a string.
+3. Thanks to Marshall Lochbaum from [Dyalog](https://dyalog.com) for pointing out windowed reductions (appearing here soon once I read a bit more).
