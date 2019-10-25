@@ -4,46 +4,46 @@
 A recent blog post that bubbled up on [r/programming](https://www.reddit.com/r/programming) entitled [Beating C With 80 Lines Of Haskell: Wc](https://chrispenner.ca/posts/wc) inspired me to see how effective APL would be in solving this problem.
 
 ### But Why APL?
-Why not? I was told by older students during my university years to avoid APL and any internship or co-op opportunities that used it. Turns out that was bad advice, at least for me--I can see how it might not be other folks' cup of tea, but it is definitely something I like. A few years back I had the opportunity to finally play with an APL derivative K (I got a job at a small K shop). I liked K but had to move on job wise. I recently downloaded a free personal copy of [Dyalog](https://www.dyalog.com) and have been playing around with it while reading through [Mastering Dyalog APL](https://www.dyalog.com/mastering-dyalog-apl.htm) by Bernard Legrand (only a few chapters in so far). I find APL friendlier to use than K and enjoy it a great deal, so this seemed like a good excuse to figure out how to do file I/O while searching through the book's PDF and flexing google-fu.
+Why not? I was told by older students during my university years to avoid APL and any internship or co-op opportunities that used it. Turns out that was bad advice, at least for me--I can see how it might not be other folks' cup of tea, but it is definitely something I like. A few years back I had the opportunity to finally play with an APL derivative K (I got a job at a small K shop). I liked K, but had to move on job wise. I recently downloaded a free personal copy of [Dyalog](https://www.dyalog.com) and have been playing around with it while reading through [Mastering Dyalog APL](https://www.dyalog.com/mastering-dyalog-apl.htm) by Bernard Legrand; I'm only a few chapters in so far. I find APL friendlier to use than K and enjoy it a great deal, so this seemed like a good excuse to figure out how to do file I/O while searching through the book's PDF and flexing google-fu.
 
 ## On with the code
-Just like Chris Penner's original article, I'm comparing against the OSX version of `wc` that shipped with my machine. Just like in the original article, I admit that there are likely faster versions of `wc`--I'm just comparing what I got.
+Just like Chris Penner's original article, I'm benchmarking against the OSX version of `wc` that shipped with my machine. Just like in the original article, I admit that there are likely faster versions of `wc`--I'm just comparing what I got.
 
 ### Counting Words
-Counting characters is trivial. Counting lines is almost as trivial, or is as trivial if we count `CRLF` as two lines--I chose the more trivial solution out of laziness. `CRLF` could be counted as one end of line with an additional three lines (warning: guesstimate).
+Counting characters is trivial. Counting lines is almost as trivial, and becomes as trivial if we count `CRLF` as two lines--I chose this solution out of laziness. `CRLF` could be counted as one end of line with an additional three lines (warning: guesstimate).
 
-Just as in the original post, the meat of the problem is in accurately counting words. The first step is counting the number of words in a single string. First let's make two definitions:
+Just as in the original post, the meat of the problem is in accurately counting words. The first step is counting the number of words in a single string. First, let's make two definitions:
 ```
 nl←⎕UCS¨10 11 12 13  ⍝ Newline characters
 sp←nl,⎕UCS¨9 32  ⍝ Space characters
 ```
-The above doesn't look like "normal" programming languages because APL doesn't use the standard ASCII character set for its symbols/terms which means none of its names are stolen from you--if you name a variable `new` or `this` or `function` it won't clash with anything. Note that it does use ASCII _symbols_ like `+` or `=` but there are no keywords using ASCII numbers/letters.
+The above doesn't look like "normal" programming languages because APL doesn't use the standard ASCII character set for its symbols/terms. This means none of its names are stolen from you--if you name a variable `new` or `this` or `function` it won't clash with anything. Note that it does use ASCII _symbols_ like `+` or `=` but there are no keywords using ASCII numbers/letters.
 
 An explanation of the above:
 1. `⍝` denotes a `//` style comment, it's called _lamp_ and it _illuminates_.
 2. `nl` and `sp` are variables with `nl` being newline characters and `sp` whitespace characters. In APL, `←` is assignment. Here we assign everything to the right of `nl` or `sp` to the variables `nl` and `sp`.
-3. `¨` will create a _derived function_ which will map the function _immediately_ to the left of `¨` across the value to the right. By _immediately_ to the left I mean you read as little as possible to the left to figure out what the lefthand argument is, but the righthand argument is the result of evaluating the _entire_ expression to the right, and this is how APL works in general--take as little as possible from the left but everything from the right.
-4. `⎕UCS` happens to be a function in Dyalog for getting unicode characters from numeric values.
+3. `¨` will create a _derived function_ which will map the function _immediately_ to the left of `¨` across the value to the right. By _immediately_ to the left I mean you read as little as possible to the left to figure out what the lefthand argument--that is, take the simple, immediate value to the left but do not _compute_ anything to the left unless it's an expression in parentheses--but the righthand argument is the result of evaluating the _entire_ expression to the right, and this is how APL works in general--take as little as possible from the left but everything from the right.
+4. `⎕UCS` is a function in Dyalog for getting unicode characters from numeric values.
 5. The ravel function `,` will catenate its lefthand and righthand arguments, so `sp` contains the newlines in `nl` along with tab and space.
 
-Now that we know what constitutes a newline or a space we can figure out how to get `wc` results. Assume the input is stored in the variable `s`, we can even give it a concrete value for now: `s←'I am the model of a modern major general'`. To find where the spaces are we use the membership function `∊` with `s∊sp`, which yields
+Now that we know what constitutes a newline or a space we can figure out how to get `wc` results. Assuming the input is stored in the variable `s`, we can even give it a concrete value for now: `s←'I am the model of a modern major general'`. To find where the spaces are we use the membership function `∊` with `s∊sp`, which yields
 ```
 0 1 0 0 1 0 0 0 1 0 0 0 0 0 1 0 0 1 0 1 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0
 ```
 telling us the exact position of any whitespace characters. We can negate the vector (turn `1`s into `0`s and vice versa) and use the partition function `⊆` to collect the words into an array of strings with `(~s∊sp)⊆s` (`~` is the negation function) and we can count the result using `≢(~s∊sp)⊆s`. The way the partition function works is it uses the boolean vector to strip out parts of its righthand argument based on runs of `1` in its lefthand argument (thanks to [u/olzd](https://www.reddit.com/user/olzd/) for pointing out `⊆` when I posted this article originally on [r/programming](https://www.reddit.com/r/programming/comments/dku13a/beating_c_with_dyalog_apl_wc/)).
 
-We only have one piece of input in the above calculation and so it is easy to turn it into a function. In APL we can make a **direct function** by using braces (I won't go into the differences in the two function types here but know that the book references above goes into some details). So we can store this calculation in a variable with:
+We only have one piece of input in the above calculation and so it is easy to turn it into a function. In APL we can make a **direct function** by using braces (I won't go into the differences in the two function types here but know that the book referenced above goes into some detail). So we can store this calculation in a variable with:
 ```
 words←{≢(~⍵∊sp)⊆⍵}
 ```
-In APL `⍺` (alpha) and `⍵` (omega) are the names of the left and right arguments to a direct function. We apply a function just like we do the built in primitive functions, we give it parameters: `words s`. One thing we can do is make `words` a bit more general and have it take _any_ boolean vector and count the partition of that vector (we don't need the characters, after all), and this then gives us:
+In APL `⍺` (alpha) and `⍵` (omega) are the names of the left and right arguments to a direct function. We apply a function just like we do the built-in primitive functions; namely, we give it parameters: `words s`. One thing we can do is make `words` a bit more general and have it take _any_ boolean vector and count the partition of that vector (we don't need the characters, after all), and this then gives us:
 ```
 words←{≢(~⍵)⊆⍵}
 ```
-And so when we apply it to our string we will do it with `words s∊sp`. Just like with the built in parameters, `words` will be evaluated on the entire expression to the right which is `s∊sp`. This yields `9`. One thing to keep in mind is testing edge cases and, for the empty string we get `0`.
+And so when we apply it to our string we will do it with `words s∊sp`. Just like with the built-in primitive functions, `words` will be evaluated on the entire expression to the right which is `s∊sp`. This yields `9`. One thing to keep in mind is testing edge cases and, for the empty string we get `0`.
 
 #### WC via Partition (⊆)
-Now that we can count words in a string we can count words in a file. We could just do this by reading in the entire file all at once and applying the `words` function and then counting the number of characters and the number of newlines. But that would be a bad idea--what if the file is 123GB in size?! Clearly we don't want to read that in all at once, instead we want to read it in a few blocks at a time. We're going to need a loop, and for that we need another type of function, a **procedural function** (again see the referenced book for details).
+Now that we can count words in a string, we can count words in a file. We could just do this by reading in the entire file all at once and applying the `words` function and then counting the number of characters and the number of newlines. But that would be a bad idea--what if the file is 123GB in size?! Clearly we don't want to read that in all at once; instead we want to read it in a few blocks at a time. We're going to need a loop, and for that we need another type of function: a **procedural function** (again, see the referenced book for details).
 
 One computation issue, as mentioned in the original Haskell based blog post, is what happens if we split up the input in the middle of a word? Well, we just use the same technique used in that blog post. No, not monoids (though that is cool), just keeping track if the last character we saw was a non-space or not. If it was and the first new character is _also_ a non-space then we subtract one word from the count as we accumulate.
 
@@ -71,7 +71,7 @@ lnsp←0
 ⎕NUNTIE fd
 res←l w c
 ```
-We define the function `wc` with input `fn` (filename) and output `res` (result). The names after `fn` are the names of variables we want to be _local_ which happens to be every variable we are using. If we left a variable out, it would be assumed global and be able to change global state. An explanation:
+We define the function `wc` with input `fn` (filename) and output `res` (result). The names after `fn` are the names of variables we want to be _local_, which happens to be every variable we are using. If we left a variable out, it would be assumed global and be able to change global state. An explanation:
 
 1. The first line, as just described, declares the function `wc` with input `fn`, output `res`, and a handful of local variables.
 2. `words` is the word counting function we derived above.
@@ -83,15 +83,15 @@ We define the function `wc` with input `fn` (filename) and output `res` (result)
 8.  Now we enter a loop with `:Repeat`, the body of which is everything between `:Repeat` and `:EndRepeat`. `:Leave` is like `break` in other languages.
 9. `data` is assigned the next block of data read from `fd`. `80` tells the `⎕NREAD` function that we want to read characters (intuitive, right?). `≢data` counts the number of items in `data` and if this is zero (i.e. `data` is empty) we exit the loop. Otherwise we add that count to `c`.
 10. We then use `data∊nl` to find the newlines in `data` and sum these up with `+/` and add this sum to `l`.
-11. We no longer need the contents of `data` we only need to know where whitespace is, so we store a boolean vector describing this in `data`. Passing this to `words` counts the number of whitespace terminated words in `data`, which we add to `w`. But then, to account for word splitting, we use `1↑data` to get whether the first character we read _this iteration_ was a space and then negate that with `~`; we use `∧` to _and_ that against whether the last character in the _previous iteration_ was _not_ a space, and subtract that from the count. As in C, `0` is false and so `1∧1` is `1` and we only subtract `1` if the previous iteration's data ended with a nonspace _and_ this iteration's data started with one.
+11. We no longer need the contents of `data`; we only need to know where whitespace is, so we store a boolean vector describing this in `data`. Passing this to `words` counts the number of whitespace terminated words in `data`, which we add to `w`. But then, to account for word splitting, we use `1↑data` to get whether the first character we read _this iteration_ was a space and then negate that with `~`; we use `∧` to _and_ that against whether the last character in the _previous iteration_ was _not_ a space, and subtract that from the count. As in C, `0` is false and so `1∧1` is `1` and we only subtract `1` if the previous iteration's data ended with a nonspace _and_ this iteration's data started with one.
 12. We then store whether this iteration's data terminated with a nonspace character.
 13. Finally we close the file descriptor after the loop and return the line, word, and character counts in `res`.
 
 #### Performance Measurements
-Using [a user defined timing operator](https://dfns.dyalog.com/c_time.htm) we can time the `wc` function. On a 1.661GB file (which is just the `big.txt` file from the original Haskell post's repository repeated multiple times), I get (on my 11 inch early 2k15 MacBook Air) initially a run of 32.97 seconds and about the same on immediate subsequent runs. Using the `time` terminal utility to run `wc` against the same file I get _user times_ ranging from 5.345s to 5.549s, so this first attempt is definitely slow compared to OSX's `wc` utility. If I comment out the line where `w` is calculated my initial running time on that same file is 4.32 seconds with subsequent runs hovering around 1.85 seconds, so clearly our word calculation is the culprit here (as was to be expected).
+Using [a user defined timing operator](https://dfns.dyalog.com/c_time.htm) we can time the `wc` function. On a 1.661GB file (which is just the `big.txt` file from the original Haskell post's repository repeated multiple times), I initially get (on my 2.2 GHz Intel Core i7, 8 GB 1600 MHz DDR3 11-inch early 2k15 MacBook Air) a run of 32.97 seconds and about the same on immediate subsequent runs. Using the `time` terminal utility to run `wc` against the same file I get _user times_ ranging from 5.345s to 5.549s, so this first attempt is definitely slow compared to OSX's `wc` utility. If I comment out the line where `w` is calculated my initial running time on that same file is 4.32 seconds with subsequent runs hovering around 1.85 seconds, so clearly our word calculation is the culprit here (as was to be expected).
 
 ### Counting Words with Array Arithmetic
-Let's call the vector `s∊sp` vector `f` for _found_: `f←s∊sp`. We don't want to just count the ones in this vector as then consecutive whitespace characters would each count as a word; what we want to count is when we switch from non-whitespace to whitespace (or vice-versa), and we can accomplish this with the difference between adjacent values. This is easy in APL, it's just `(1↓f)-(¯1)↓f`:
+Let's call the vector `s∊sp` vector `f` for _found_: `f←s∊sp`. We don't want to count only the ones in this vector, because consecutive whitespace characters would each count as a word; what we want to count is when we switch from non-whitespace to whitespace (or vice-versa), and we can accomplish this with the difference between adjacent values. This is easy in APL, it's just `(1↓f)-(¯1)↓f`:
 1. `¯` is "high minus" and is used to negate literals.
 2. `↓` is the drop function which drops a number of items from the value to the right. If the number on the left is positive, it drops that many from the _front_ of the value, if it is negative then it drops the absolute value of that many from the _back_ of the value. So `1↓f` is `f` without the first item and `(¯1)↓f` is `f` without the last item.
 3. `-` is subtraction, so we are subtracting values in `f` from the values to their left. For this particular `f` we get the following:
@@ -146,7 +146,7 @@ res←l w c
 On the same 1.661GB file as before I initially get a run of 3.36 seconds, but then 2.75s, 2.34s, 2.36s on immediate subsequent runs now that the computer is pumped and primed. Using the `time` terminal utility to run `wc` against the same file I (again) get _user times_ ranging from 5.345s to 5.549s, so this attempt is faster and we are done. I get similarly scaled differences for smaller files.
 
 ## Splitting It All Up
-We can split our procedural function up into a few direct functions and an operator which might make it easier to understand and maintain (or maybe not). We start with a function computing the `wc` stats on a string together with whether the string's first and last character is not a space:
+We can split our procedural function up into a few direct functions and an operator, which might make it easier to understand and maintain (or maybe not). We start with a function computing the `wc` stats on a string together with whether the string's first and last characters are not spaces:
 
 ```
 blockCount←{
@@ -163,7 +163,7 @@ blockCount←{
 3. From `s` we calculate the words in `blockCount`'s righthand argument directly, just as we did before.
 4. Finally we return whether the first character is not a space, the number of characters, the number of words, the number of lines, and whether the last character is not a space.
 
-We can apply `blockCount` to multiple strings. Just like the original Haskell version we need some way to combine the results of applying `blockCount` to sequential strings from a file, which we do with the following:
+We can apply `blockCount` to multiple strings. Just like the original Haskell version, we need some way to combine the results of applying `blockCount` to sequential strings from a file, which we do with the following:
 
 ```
 blockCollapse←{
@@ -173,7 +173,7 @@ blockCollapse←{
 }
 ```
 
-The assumption here is that the results from `blockCount` are stored in a matrix where each row is a result, with the values as described as above (whether the first character is a nonspace, etc...). When we collapse a sequence of `blockCount` results we want a result of the same form as `blockCount`. This will be the following:
+The assumption here is that the results from `blockCount` are stored in a matrix where each row is a result, with the values as described as above (whether the first character is a nonspace, etc.). When we collapse a sequence of `blockCount` results we want a result of the same form as `blockCount`. This will be the following:
 
 1. Whether the first result in the matrix represented a string _starting_ with a nonspace--that value is `⍵[1;1]`.
 2. The sum of all the characters from all the results.
@@ -181,9 +181,9 @@ The assumption here is that the results from `blockCount` are stored in a matrix
 4. The sum of all the lines from all the results.
 5. Whether the last result in the matrix represented a string _ending_ with a nonspace--that value is `⍵[≢⍵;5]`.
 
-The sums in the middle can be calculated if we reduce addition _down_ the input matrix. `(+⌿⍵)` will calculate that sum, and `(+⌿⍵)[2 3 4]` will be the middle three values of that sum (we don't need the sums of whether the strings started or ended with nonspace characters).
+The sums in the middle (items 2, 3, and 4) can be calculated if we reduce addition _down_ the input matrix. `(+⌿⍵)` will calculate the total sum, and `(+⌿⍵)[2 3 4]` extracts the middle three values (we don't need the sums of whether the strings started or ended with nonspace characters).
 
-The value we have to subtract--the number of times a word was split--is calculated by taking the sum of whether a string started with a nonspace _anded_ with whether the string before ended with one. That is the value `+/(1↓⍵[;1])∧(¯1)↓⍵[;5])`. `(1↓⍵[;1])` is the first column of our results matrix (which represents whether strings started with a nonspace) without the value from the first result; `(¯1)↓⍵[;5]` is the last column (representing whether strings ended with a nonspace) without the value from the last result. We and these together with `∧` and sum that with `+/` to get the number of times we split a word; prepending `-` negates the value and placing it in the middle of a vector of four zeroes lets us just add it to our calculated result, adjusting the word count appropriately.
+The value we have to subtract--the number of times a word was split--is calculated by taking the sum of whether a string started with a nonspace _anded_ with whether the string before ended with one. That is the value `+/(1↓⍵[;1])∧(¯1)↓⍵[;5])`. `(1↓⍵[;1])` is the first column of our results matrix (which represents whether strings started with a nonspace) with the value from the first result dropped; `(¯1)↓⍵[;5]` is the last column (representing whether strings ended with a nonspace) with the value from the last result dropped. We _and_ these together with `∧` and sum that with `+/` to get the number of times we split a word; prepending `-` negates the value and placing it in the middle of a vector of four zeroes lets us just add it to our calculated result, adjusting the word count appropriately.
 
 Now we add a user defined operator to handle looping over reading a file. The below does this:
 
@@ -198,7 +198,7 @@ v←⍬
 :Until 0=≢data
 ```
 
-`v` is the output of the operator, we need this for technical reasons but the value won't be used. Our operator accepts a computation to use on each string on its left and a file descriptor on its right and loops until it has consumed all the data in the file.
+`v` is the output of the operator; we need this for technical reasons that I won't go into (feel free to try it with it missing), but the value won't be used. Our operator accepts a computation to use on each string on its left and a file descriptor on its right and loops until it has consumed all the data in the file.
 
 Finally, we can bring this all together in a (possibly) simpler implementation of `wc` which relies on the computations we've defined. Since we no longer need to use looping or conditionals in `wc` (all that work is done in `rc`), we can make `wc` a direct function:
 
@@ -219,7 +219,7 @@ wc←{
 
 We start by making `res` a zero-filled matrix of one row by five column. Then we define a helper function `update` which will update `res` using `blockCount`. `,[1]` lets us use ravel along its lefthand argument's first axis so that `val` will be `res` with the result from `blockCount ⍵` appended as the last row. `∘←` lets us update `res` from within `update` and we return `val`.
 
-Just like the built in operators we put our operated function on the left of `rc` which creates a derived function that accepts the file descriptor `fd`. `rc` will iterate over the contents of `fd` and successively apply update. We have to assign the result (or just use it somehow) as the first unused computation of a direct function is its return value, and we don't want an early return.
+Just like the built-in operators, we put our operated function on the left of `rc`, which creates a derived function that accepts the file descriptor `fd`. `rc` will iterate over the contents of `fd` and successively apply `update`. We have to assign the result (or just use it somehow) because the first unused computation of a direct function is its return value, and we don't want an early return.
 
 Finally, we used `blockCollapse` to compress the result matrix down into the desired answer and pick out the values we want with `[4 3 2]`.
 
@@ -237,11 +237,11 @@ res←init
     :EndIf
 :Until 0=≢data
 ```
-We are now operating on two functions--`m` to map the file data and `r` to fold new data into an accumulated result--i.e. we are doing a reduce/fold across a transformation of the file's contents. We also now accept the file descriptor `fd` on the left so that we can easily accept an initial accumulation value on the right.
+We are now operating on two functions--`m` to map the file data and `r` to fold new data into an accumulated result--i.e., we are doing a reduce/fold across a transformation of the file's contents. We also now accept the file descriptor `fd` on the left so that we can easily accept an initial accumulation value on the right.
 
-One thing we won't have to change is `blockCount`, it is the same as the above. We do have to change `blockCollapse` though and since we no longer need to collapse a whole matrix of results but instead need to add two results together, we can have a much simpler function `blockAdd←{(⍺[1],(⍺+⍵)[2 3 4],⍵[5])-(0 0(⍺[5]∧⍵[1])0 0)}` which does just that.
+One thing we won't have to change is `blockCount`: it is the same as the above. We do have to change `blockCollapse`, though, and since we no longer need to collapse a whole matrix of results but instead need to add two results together, we can have a much simpler function `blockAdd←{(⍺[1],(⍺+⍵)[2 3 4],⍵[5])-(0 0(⍺[5]∧⍵[1])0 0)}`.
 
-Since `rc` is now accumulating results we don't really need to be updating a result in `wc` which now has the following sleek form:
+Since `rc` is now accumulating results, we don't really need to be updating a result in `wc`, which now has the following sleek form:
 ```
 wc←{
     blockAdd←{(⍺[1],(⍺+⍵)[2 3 4],⍵[5])-(0 0(⍺[5]∧⍵[1])0 0)}
@@ -251,4 +251,4 @@ wc←{
     res[4 3 2]
 }
 ```
-We use `blockCount` to map data blocks in the file to statistics for that block then use `blockAdd` to combine them, all handled by our operator `rc`. We now have regained constant memory space (the size of which depends on how much data we read at once, here I chose one megabyte), and it's starting to have the the feel of the monoid solution in the original Haskell article.
+We use `blockCount` to map data blocks in the file to statistics for that block then use `blockAdd` to combine them, all handled by our operator `rc`. We now have regained constant memory space (the size of which depends on how much data we read at once; here I chose one megabyte), and it's starting to have the the feel of the monoid solution in the original Haskell article.
