@@ -45,7 +45,7 @@ And so when we apply it to our string we will do it with `words s∊sp`. Just li
 #### WC via Partition (⊆)
 Now that we can count words in a string, we can count words in a file. We could just do this by reading in the entire file all at once and applying the `words` function and then counting the number of characters and the number of newlines. But that would be a bad idea--what if the file is 123GB in size?! Clearly we don't want to read that in all at once; instead we want to read it in a few blocks at a time. We're going to need a loop, and for that we need another type of function: a **procedural function** (again, see the referenced book for details).
 
-One computation issue, as mentioned in the original Haskell based blog post, is what happens if we split up the input in the middle of a word? Well, we just use the same technique used in that blog post. No, not monoids (though that is cool), just keeping track if the last character we saw was a non-space or not. If it was and the first new character is _also_ a non-space then we subtract one word from the count as we accumulate.
+One computation issue, as mentioned in the original Haskell based blog post, is what happens if we split up the input in the middle of a word? Well, we just use the same technique used in that blog post. No, not monoids (though that is cool), just keeping track if the last character we saw was a nonspace or not. If it was and the first new character is _also_ a nonspace then we subtract one word from the count as we accumulate.
 
 With that in mind, here's the first attempt
 ```
@@ -103,7 +103,7 @@ This vector is one element _shorter_ than `f`--if `f` were a vector of five item
 ```
 1 0 0 1 0 0 0 1 0 0 0 0 0 1 0 0 1 0 1 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0
 ```
-This represents the positions where a space followed a non-space (the first `1` corresponds to the space between `I` and `am`). Summing this up gives us the number of places a word _terminated_ by being followed by a space, and we can get that sum with the function `+/`. Just as `¨` created a _derived function_ so does `/` -- both are called _operators_. As `¨` was associated with the commonly named function `map` so is `/` associated with the commonly named function `reduce`/`fold`, and so `+/` is a sum function.
+This represents the positions where a space followed a nonspace (the first `1` corresponds to the space between `I` and `am`). Summing this up gives us the number of places a word _terminated_ by being followed by a space, and we can get that sum with the function `+/`. Just as `¨` created a _derived function_ so does `/` -- both are called _operators_. As `¨` was associated with the commonly named function `map` so is `/` associated with the commonly named function `reduce`/`fold`, and so `+/` is a sum function.
 
 For `+/1=(1↓f)-(¯1)↓f` we get `8`, but `'I am the model of a modern major general'` has `9` words, not `8`. The problem is that we were only counting words terminated by a space, not by the end of the string. To count that, we must check if the last character is a space or not and if it's not then we can count the end of the string as terminating a word. We can get the whether the last character was a space or not with `(¯1)↑f`, which will be `1` if `s` ended with a space or `0` if not. Since we want to add exactly one word to the count when a string _does not_ end with a space we negate this with `~` and add that. Thus the word count expression is:
 ```
@@ -145,6 +145,18 @@ res←l w c
 #### Performance Measurements
 On the same 1.661GB file as before I initially get a run of 3.36 seconds, but then 2.75s, 2.34s, 2.36s on immediate subsequent runs now that the computer is pumped and primed. Using the `time` terminal utility to run `wc` against the same file I (again) get _user times_ ranging from 5.345s to 5.549s, so this attempt is faster and we are done. I get similarly scaled differences for smaller files.
 
+### Counting Words with a Windowed Reduction
+Eventually this article came to the attention of [Marshall Lochbaum](https://www.dyalog.com/blog/author/marshall/) at Dyalog who pointed out that we can use a windowed reduction to more efficiently count words. A windowed reduction involves a reduction applied to a sliding window across a vector. If we have the expression `⍳9`, which yields the vector `1 2 3 4 5 6 7 8 9`, then `+/⍳9` gives `45` as expected. If we do `1+/⍳9` however we just get back the same vector (as `+` was reduced across just each item by itself). `2+/⍳9` yields `3 5 7 9 11 13 15 17` and `6+/⍳9` yields `21 27 33 39`.
+
+#### WC via Windowed Reduction
+Whereas before I was using `1=(1↓⍵)-(¯1)↓⍵` to try and find where we went from nonspace to space we could instead use `2</⍵`, which will look at any two adjacent elements in `⍵` and compare them with `<`. The only change we need in the above `wc` function is to have
+```
+words←{(~(¯1)↑⍵)++/2</⍵}
+```
+
+#### Performance Measurements
+As far as performance, for this new version I get an initial run of 3.33 seconds followed by runs hovering around 1.85s, so a significant improvement that also taught me something (and maybe I'll even keep in touch with someone from Dyalog).
+
 ## Splitting It All Up
 We can split our procedural function up into a few direct functions and an operator, which might make it easier to understand and maintain (or maybe not). We start with a function computing the `wc` stats on a string together with whether the string's first and last characters are not spaces:
 
@@ -153,7 +165,7 @@ blockCount←{
     l←+/⍵∊⎕UCS¨10 11 12 13  ⍝ #lines
     s←⍵∊⎕UCS¨9 10 11 12 13 32  ⍝ is space
     w←(~(¯1)↑s)++/1=(1↓s)-(¯1)↓s  ⍝ words
-    ⍝ first-non-space, chars, words, lines, last-non-space
+    ⍝ first-nonspace, chars, words, lines, last-nonspace
     (~1↑s)(≢⍵)w l(~(¯1)↑s)
 }
 ```
@@ -256,4 +268,4 @@ We use `blockCount` to map data blocks in the file to statistics for that block 
 ## Acknowledgements
 1. My long time friend Patrick Beh-Forrest was kind enough to read my post and suggest edits to my writing. I thank him deeply.
 2. My thanks to [u/olzd](https://www.reddit.com/u/olzd) for pointing out the beautiful partition (⊆) solution to counting words in a string.
-3. Thanks to Marshall Lochbaum from [Dyalog](https://dyalog.com) for pointing out windowed reductions (appearing here soon once I read a bit more).
+3. Thanks to Marshall Lochbaum from [Dyalog](https://dyalog.com) for pointing out windowed reductions.
